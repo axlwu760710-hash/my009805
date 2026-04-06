@@ -1,0 +1,67 @@
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+from datetime import datetime
+
+# 頁面標題與小圖示
+st.set_page_config(page_title="009805 監控", page_icon="⚡", layout="wide")
+
+st.title("⚡ 009805 新光美國電力基建即時監控")
+st.write("連動追蹤：NYSE FactSet 美國電力基建息收指數 (PATON)")
+
+# 最新 50 檔成分股權重數據 (2026/04 更新)
+COMPONENTS = {
+    "GEV": 0.1276, "VRT": 0.0979, "ETN": 0.0904, "PWR": 0.0640, "HUBB": 0.0615,
+    "NEE": 0.0424, "SO": 0.0351, "DUK": 0.0335, "NXT": 0.0272, "D": 0.0232,
+    "AEP": 0.0231, "BE": 0.0224, "FSLR": 0.0204, "ED": 0.0180, "SWX": 0.0178,
+    "AGX": 0.0176, "EXC": 0.0163, "MTZ": 0.0155, "PEG": 0.0133, "CEG": 0.0124,
+    "EIX": 0.0124, "WEC": 0.0124, "TTEK": 0.0123, "POWL": 0.0121, "ES": 0.0115,
+    "ACM": 0.0113, "ETR": 0.0111, "XEL": 0.0103, "ENS": 0.0100, "FE": 0.0097,
+    "PPL": 0.0093, "GNRC": 0.0089, "VST": 0.0074, "DTE": 0.0067, "AEE": 0.0066,
+    "EVRG": 0.0062, "VICR": 0.0057, "PNW": 0.0053, "CMS": 0.0052, "OGE": 0.0044,
+    "PCG": 0.0043, "CNP": 0.0041, "NRG": 0.0041, "LNT": 0.0041, "ENPH": 0.0037,
+    "AES": 0.0033, "ITRI": 0.0030, "AMSC": 0.0023, "MEI": 0.0006, "MVST": 0.0002
+}
+
+def load_data():
+    tickers = list(COMPONENTS.keys()) + ["009805.TW", "^PATON"]
+    # 抓取最近兩日的資料來計算漲跌
+    data = yf.download(tickers, period="2d", interval="1d", progress=False)['Close']
+    latest = data.iloc[-1]
+    prev = data.iloc[-2]
+    
+    rows = []
+    total_impact = 0
+    for t in COMPONENTS:
+        change = (latest[t] - prev[t]) / prev[t]
+        impact = change * COMPONENTS[t]
+        total_impact += impact
+        rows.append({
+            "成分股": t, 
+            "當前價格": f"{latest[t]:.2f}", 
+            "今日漲跌": f"{change:+.2%}", 
+            "對ETF貢獻": impact
+        })
+    
+    etf_real = (latest["009805.TW"] - prev["009805.TW"]) / prev["009805.TW"]
+    return pd.DataFrame(rows), total_impact, etf_real
+
+# 介面按鈕
+if st.button("🚀 點擊刷新即時數據 (美股開盤時最準)"):
+    with st.spinner('正在同步全球電力基建數據...'):
+        df, est_val, real_val = load_data()
+        
+        # 顯示大字卡
+        c1, c2 = st.columns(2)
+        c1.metric("美股成分股加權總計 (預估漲跌)", f"{est_val:+.2%}")
+        c2.metric("009805 台股現價 (實際漲跌)", f"{real_val:+.2%}")
+        
+        # 顯示詳細列表
+        st.subheader("💡 各成分股貢獻度排行 (由高到低)")
+        st.dataframe(
+            df.sort_values("對ETF貢獻", ascending=False).style.format({"對ETF貢獻": "{:+.4%}"}),
+            use_container_width=True
+        )
+        st.success(f"更新成功！時間：{datetime.now().strftime('%H:%M:%S')}")
+else:
+    st.info("請按下上方按鈕開始監控。現在是台灣時間晚上，美股即將開盤！")
