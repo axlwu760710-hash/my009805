@@ -1,11 +1,3 @@
-沒問題！既然連線已經打通，我們就把「完全體」的 50 檔成分股 全部塞進去。
-
-我已經幫你把 009805 最新的 50 檔成分股代碼與權重（包含 GEV、VRT、ETN 到最微小的 MVST）全部寫進這段程式碼了。
-
-🛠️ 最後一次更新 app.py
-請回到 GitHub，把 app.py 內容替換成這段 50 檔全開版：
-
-Python
 import streamlit as st
 import yfinance as yf
 import pandas as pd
