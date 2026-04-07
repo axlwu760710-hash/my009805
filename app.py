@@ -21,17 +21,25 @@ COMPONENTS = {
     'AWR': 0.003, 'YORW': 0.002, 'ARTNA': 0.002, 'MSEX': 0.002, 'WTRG': 0.001
 }
 
-# --- 3. 數據抓取函數 (修正 Adj Close 抓取邏輯) ---
+# --- 3. 數據抓取函數 ---
 @st.cache_data(ttl=60)
 def get_all_data(tickers):
-    # 下載成份股
-    df_stocks = yf.download(tickers, period='2d', interval='1d', progress=False)
+    # 下載成份股 (取 5 天確保跨週末也有數據)
+    df_stocks = yf.download(tickers, period='5d', interval='1d', progress=False)
     # 下載匯率
-    df_fx = yf.download('TWD=X', period='2d', interval='1d', progress=False)
+    df_fx = yf.download('TWD=X', period='5d', interval='1d', progress=False)
     
-    # 修正：針對新版 yfinance，直接提取 Close 價格並處理索引
-    prices = df_stocks['Close'] 
-    fx_prices = df_fx['Close']
+    # 提取 Close 價格，並處理可能的多層索引
+    if isinstance(df_stocks.columns, pd.MultiIndex):
+        prices = df_stocks['Close']
+    else:
+        prices = df_stocks
+        
+    if isinstance(df_fx.columns, pd.MultiIndex):
+        fx_prices = df_fx['Close']['TWD=X']
+    else:
+        fx_prices = df_fx['Close']
+        
     return prices, fx_prices
 
 # --- 4. 側邊欄 ---
@@ -45,34 +53,35 @@ with st.sidebar:
 # --- 5. 核心邏輯處理 ---
 st.title("⚡ 009805 新光美國電力基建 - 實時監控儀表板")
 
-tickers = list(COMPONENTS.items())
 try:
     prices, fx_prices = get_all_data(list(COMPONENTS.keys()))
     
-    # 取得最新匯率與昨日匯率
-    current_fx = float(fx_prices.iloc[-1])
-    prev_fx = float(fx_prices.iloc[-2])
+    # 修正：確保取到的是單一數值 (float) 而不是 Series
+    current_fx = float(fx_prices.dropna().iloc[-1])
+    prev_fx = float(fx_prices.dropna().iloc[-2])
     fx_change_ratio = current_fx / prev_fx
 
     stock_results = []
     total_weighted_change = 0
 
     for ticker, weight in COMPONENTS.items():
-        # 修正：從 DataFrame 提取該股的兩日價格
-        ticker_prices = prices[ticker].dropna()
-        curr_p = ticker_prices.iloc[-1]
-        prev_p = ticker_prices.iloc[-2]
-        change = (curr_p - prev_p) / prev_p
-        
-        contribution = change * weight
-        total_weighted_change += contribution
-        
-        stock_results.append({
-            "代號": ticker,
-            "漲跌幅%": round(change * 100, 2),
-            "權重%": round(weight * 100, 2),
-            "貢獻度%": round(contribution * 100, 4)
-        })
+        # 提取該股數據並去除空值
+        if ticker in prices.columns:
+            ticker_series = prices[ticker].dropna()
+            if len(ticker_series) >= 2:
+                curr_p = ticker_series.iloc[-1]
+                prev_p = ticker_series.iloc[-2]
+                change = (curr_p - prev_p) / prev_p
+                
+                contribution = change * weight
+                total_weighted_change += contribution
+                
+                stock_results.append({
+                    "代號": ticker,
+                    "漲跌幅%": round(change * 100, 2),
+                    "權重%": round(weight * 100, 2),
+                    "貢獻度%": round(contribution * 100, 4)
+                })
 
     # --- 6. 淨值計算 ---
     estimated_nav = last_nav * (1 + total_weighted_change) * fx_change_ratio
@@ -98,11 +107,4 @@ try:
     st.plotly_chart(fig, use_container_width=True)
 
     # --- 9. 明細表 ---
-    st.subheader("📝 成分股詳細數據")
-    st.dataframe(df_viz.sort_values("貢獻度%", ascending=False), use_container_width=True)
-
-except Exception as e:
-    st.error(f"數據解析失敗。錯誤訊息: {e}")
-    st.info("提示：如果出現 'Close' 或 'Adj Close' 錯誤，通常是 Yahoo 盤中數據尚未完全同步，請稍候再刷新。")
-
-st.caption(f"最後更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    st.subheader("📝 成分股詳細數據
