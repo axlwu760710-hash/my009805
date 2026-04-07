@@ -29,17 +29,22 @@ def get_all_data(tickers):
     # 下載匯率
     df_fx = yf.download('TWD=X', period='5d', interval='1d', progress=False)
     
-    # 提取 Close 價格，並處理可能的多層索引
+    # 處理成份股價格提取
     if isinstance(df_stocks.columns, pd.MultiIndex):
         prices = df_stocks['Close']
     else:
         prices = df_stocks
         
+    # 處理匯率提取
     if isinstance(df_fx.columns, pd.MultiIndex):
         fx_prices = df_fx['Close']['TWD=X']
     else:
-        fx_prices = df_fx['Close']
-        
+        # 處理單一下載情況
+        if 'Close' in df_fx.columns:
+            fx_prices = df_fx['Close']
+        else:
+            fx_prices = df_fx
+            
     return prices, fx_prices
 
 # --- 4. 側邊欄 ---
@@ -56,16 +61,16 @@ st.title("⚡ 009805 新光美國電力基建 - 實時監控儀表板")
 try:
     prices, fx_prices = get_all_data(list(COMPONENTS.keys()))
     
-    # 修正：確保取到的是單一數值 (float) 而不是 Series
-    current_fx = float(fx_prices.dropna().iloc[-1])
-    prev_fx = float(fx_prices.dropna().iloc[-2])
+    # 確保匯率取值正確
+    fx_clean = fx_prices.dropna()
+    current_fx = float(fx_clean.iloc[-1])
+    prev_fx = float(fx_clean.iloc[-2])
     fx_change_ratio = current_fx / prev_fx
 
     stock_results = []
     total_weighted_change = 0
 
     for ticker, weight in COMPONENTS.items():
-        # 提取該股數據並去除空值
         if ticker in prices.columns:
             ticker_series = prices[ticker].dropna()
             if len(ticker_series) >= 2:
@@ -94,17 +99,4 @@ try:
     c2.metric("即時美金匯率", f"{current_fx:.2f}", f"{current_fx - prev_fx:.2f}")
     c3.metric("美股成分股總變動", f"{total_weighted_change*100:.2f}%")
 
-    st.markdown("---")
-
-    # --- 8. 熱力圖 ---
-    st.subheader("📊 成分股表現熱力圖")
-    df_viz = pd.DataFrame(stock_results)
-    fig = px.treemap(
-        df_viz, path=["代號"], values="權重%",
-        color="漲跌幅%", color_continuous_scale='RdYlGn',
-        color_continuous_midpoint=0
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    # --- 9. 明細表 ---
-    st.subheader("📝 成分股詳細數據
+    st.markdown
