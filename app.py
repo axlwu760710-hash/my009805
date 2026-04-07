@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
+from streamlit_javascript import st_javascript # 請確保 requirements.txt 加入 streamlit-javascript
 
 # --- 1. 網頁配置 ---
 st.set_page_config(page_title="009805 淨值即時監控", layout="wide")
@@ -26,23 +27,28 @@ COMPONENTS = {
 def get_all_data(tickers):
     df_stocks = yf.download(tickers, period='5d', interval='1d', progress=False)
     df_fx = yf.download('TWD=X', period='5d', interval='1d', progress=False)
-    
-    if isinstance(df_stocks.columns, pd.MultiIndex):
-        prices = df_stocks['Close']
-    else:
-        prices = df_stocks
-        
-    if isinstance(df_fx.columns, pd.MultiIndex):
-        fx_prices = df_fx['Close']['TWD=X']
-    else:
-        fx_prices = df_fx['Close'] if 'Close' in df_fx.columns else df_fx
-            
+    prices = df_stocks['Close'] if isinstance(df_stocks.columns, pd.MultiIndex) else df_stocks
+    fx_prices = df_fx['Close']['TWD=X'] if isinstance(df_fx.columns, pd.MultiIndex) else df_fx['Close']
     return prices, fx_prices
 
-# --- 4. 側邊欄 ---
+# --- 4. 側邊欄：持久化記憶功能 ---
+# 從瀏覽器讀取上次存的數字
+stored_nav = st_javascript('localStorage.getItem("nav_009805");')
+
+# 如果讀不到(第一次使用)，給預設值 15.11
+if stored_nav is None or stored_nav == "":
+    initial_nav = 15.11
+else:
+    initial_nav = float(stored_nav)
+
 with st.sidebar:
     st.header("⚙️ 參數設定")
-    last_nav = st.number_input("昨日官方收盤淨值 (NAV)", value=17.50, format="%.4f")
+    last_nav = st.number_input("昨日官方收盤淨值 (NAV)", value=initial_nav, format="%.4f")
+    
+    # 當數值改變時，透過 JavaScript 存入瀏覽器
+    if last_nav != initial_nav:
+        st_javascript(f'localStorage.setItem("nav_009805", "{last_nav}");')
+    
     if st.button("手動刷新數據"):
         st.cache_data.clear()
         st.rerun()
@@ -52,7 +58,6 @@ st.title("⚡ 009805 新光美國電力基建 - 實時監控儀表板")
 
 try:
     prices, fx_prices = get_all_data(list(COMPONENTS.keys()))
-    
     fx_clean = fx_prices.dropna()
     current_fx = float(fx_clean.iloc[-1])
     prev_fx = float(fx_clean.iloc[-2])
@@ -71,10 +76,8 @@ try:
                 contribution = change * weight
                 total_weighted_change += contribution
                 stock_results.append({
-                    "代號": ticker,
-                    "漲跌幅%": round(change * 100, 2),
-                    "權重%": round(weight * 100, 2),
-                    "貢獻度%": round(contribution * 100, 4)
+                    "代號": ticker, "漲跌幅%": round(change * 100, 2),
+                    "權重%": round(weight * 100, 2), "貢獻度%": round(contribution * 100, 4)
                 })
 
     estimated_nav = last_nav * (1 + total_weighted_change) * fx_change_ratio
@@ -91,17 +94,11 @@ try:
     df_viz = pd.DataFrame(stock_results)
     if not df_viz.empty:
         st.subheader("📊 成分股表現熱力圖")
-        fig = px.treemap(
-            df_viz, path=["代號"], values="權重%",
-            color="漲跌幅%", color_continuous_scale='RdYlGn',
-            color_continuous_midpoint=0
-        )
+        fig = px.treemap(df_viz, path=["代號"], values="權重%", color="漲跌幅%", 
+                         color_continuous_scale='RdYlGn', color_continuous_midpoint=0)
         st.plotly_chart(fig, use_container_width=True)
-
         st.subheader("📝 成分股詳細數據")
         st.dataframe(df_viz.sort_values("貢獻度%", ascending=False), use_container_width=True)
-    else:
-        st.warning("暫無成分股數據。")
 
 except Exception as e:
     st.error(f"數據解析失敗。錯誤訊息: {e}")
