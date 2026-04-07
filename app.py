@@ -3,10 +3,10 @@ import yfinance as yf
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
-from streamlit_javascript import st_javascript # 請確保 requirements.txt 加入 streamlit-javascript
+import streamlit.components.v1 as components
 
 # --- 1. 網頁配置 ---
-st.set_page_config(page_title="009805 淨值即時監控", layout="wide")
+st.set_page_config(page_title="009805 電力基建即時預估 | 專業版", layout="wide", initial_sidebar_state="expanded")
 
 # --- 2. 完整 50 檔成分股與權重 ---
 COMPONENTS = {
@@ -22,7 +22,7 @@ COMPONENTS = {
     'AWR': 0.003, 'YORW': 0.002, 'ARTNA': 0.002, 'MSEX': 0.002, 'WTRG': 0.001
 }
 
-# --- 3. 數據抓取函數 ---
+# --- 3. 數據抓取 ---
 @st.cache_data(ttl=60)
 def get_all_data(tickers):
     df_stocks = yf.download(tickers, period='5d', interval='1d', progress=False)
@@ -31,30 +31,34 @@ def get_all_data(tickers):
     fx_prices = df_fx['Close']['TWD=X'] if isinstance(df_fx.columns, pd.MultiIndex) else df_fx['Close']
     return prices, fx_prices
 
-# --- 4. 側邊欄：持久化記憶功能 ---
-# 從瀏覽器讀取上次存的數字
-stored_nav = st_javascript('localStorage.getItem("nav_009805");')
-
-# 如果讀不到(第一次使用)，給預設值 15.11
-if stored_nav is None or stored_nav == "":
-    initial_nav = 15.11
-else:
-    initial_nav = float(stored_nav)
-
+# --- 4. 側邊欄：參數與【贊助區】 ---
 with st.sidebar:
-    st.header("⚙️ 參數設定")
-    last_nav = st.number_input("昨日官方收盤淨值 (NAV)", value=initial_nav, format="%.4f")
+    st.title("🛡️ 控制中心")
+    query_nav = st.query_params.get("nav", "15.11")
+    last_nav = st.number_input("昨日官方淨值 (NAV)", value=float(query_nav), format="%.4f")
+    if str(last_nav) != query_nav:
+        st.query_params["nav"] = str(last_nav)
     
-    # 當數值改變時，透過 JavaScript 存入瀏覽器
-    if last_nav != initial_nav:
-        st_javascript(f'localStorage.setItem("nav_009805", "{last_nav}");')
-    
-    if st.button("手動刷新數據"):
+    if st.button("🚀 強制刷新數據"):
         st.cache_data.clear()
         st.rerun()
 
-# --- 5. 核心邏輯處理 ---
-st.title("⚡ 009805 新光美國電力基建 - 實時監控儀表板")
+    st.markdown("---")
+    # --- 變現區 A：贊助按鈕 ---
+    st.subheader("☕ 支持作者")
+    st.write("如果預估精準，歡迎贊助一杯咖啡，讓工具持續維護！")
+    # 這裡可以放你的 Buy Me a Coffee 或 綠界/街口 連結
+    st.markdown("[👉 點我贊助 (Buy Me a Coffee)](https://www.buymeacoffee.com/yourname)")
+    
+    st.markdown("---")
+    # --- 變現區 B：推薦連結 (Affiliate) ---
+    st.subheader("📈 投資推薦")
+    st.info("還沒開通美股？使用以下連結開戶享手續費優惠：")
+    st.markdown("- [富邦證券開戶送好禮](https://example.com)")
+    st.markdown("- [Firstrade 免費開戶連結](https://example.com)")
+
+# --- 5. 主頁面：核心數據 ---
+st.title("⚡ 009805 美國電力基建 - 淨值導航")
 
 try:
     prices, fx_prices = get_all_data(list(COMPONENTS.keys()))
@@ -70,37 +74,45 @@ try:
         if ticker in prices.columns:
             ticker_series = prices[ticker].dropna()
             if len(ticker_series) >= 2:
-                curr_p = ticker_series.iloc[-1]
-                prev_p = ticker_series.iloc[-2]
+                curr_p = ticker_series.iloc[-1]; prev_p = ticker_series.iloc[-2]
                 change = (curr_p - prev_p) / prev_p
-                contribution = change * weight
-                total_weighted_change += contribution
+                total_weighted_change += (change * weight)
                 stock_results.append({
                     "代號": ticker, "漲跌幅%": round(change * 100, 2),
-                    "權重%": round(weight * 100, 2), "貢獻度%": round(contribution * 100, 4)
+                    "權重%": round(weight * 100, 2), "貢獻度%": round(change * weight * 100, 4)
                 })
 
-    estimated_nav = last_nav * (1 + total_weighted_change) * fx_change_ratio
-    nav_diff = estimated_nav - last_nav
-    nav_pct = (nav_diff / last_nav) * 100
+    est_nav = last_nav * (1 + total_weighted_change) * fx_change_ratio
+    nav_diff = est_nav - last_nav
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("預估即時淨值", f"{estimated_nav:.4f}", f"{nav_diff:.4f} ({nav_pct:.2f}%)")
-    c2.metric("即時美金匯率", f"{current_fx:.2f}", f"{current_fx - prev_fx:.2f}")
-    c3.metric("美股成分股總變動", f"{total_weighted_change*100:.2f}%")
+    # 儀表板
+    col1, col2, col3 = st.columns(3)
+    col1.metric("即時預估淨值", f"${est_nav:.4f}", f"{nav_diff:.4f} ({nav_diff/last_nav:.2%})")
+    col2.metric("即時美金匯率", f"{current_fx:.2f}", f"{(current_fx-prev_fx):.2f}")
+    col3.metric("成分股加權變動", f"{total_weighted_change:.2%}")
 
+    # --- 變現區 C：橫幅廣告位 (Banner Ad) ---
+    st.markdown("---")
+    components.html("""
+        <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center;">
+            <p style="color: #555; margin: 0;">廣告預留位 (AD SPACE)</p>
+            <p style="font-size: 12px; color: #888;">合作洽談：your_email@example.com</p>
+        </div>
+    """, height=80)
     st.markdown("---")
 
+    # 熱力圖
     df_viz = pd.DataFrame(stock_results)
-    if not df_viz.empty:
-        st.subheader("📊 成分股表現熱力圖")
-        fig = px.treemap(df_viz, path=["代號"], values="權重%", color="漲跌幅%", 
-                         color_continuous_scale='RdYlGn', color_continuous_midpoint=0)
-        st.plotly_chart(fig, use_container_width=True)
-        st.subheader("📝 成分股詳細數據")
-        st.dataframe(df_viz.sort_values("貢獻度%", ascending=False), use_container_width=True)
+    st.subheader("📊 盤面動態 (Treemap)")
+    fig = px.treemap(df_viz, path=["代號"], values="權重%", color="漲跌幅%", 
+                     color_continuous_scale='RdYlGn', color_continuous_midpoint=0)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 數據表
+    st.subheader("📝 成分股貢獻明細")
+    st.dataframe(df_viz.sort_values("貢獻度%", ascending=False), use_container_width=True)
 
 except Exception as e:
-    st.error(f"數據解析失敗。錯誤訊息: {e}")
+    st.error(f"系統運行中... 請點擊刷新按鈕。 (Error: {e})")
 
-st.caption(f"最後更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(f"數據最後更新: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 本工具僅供參考，投資請自行評估風險。")
