@@ -24,26 +24,18 @@ COMPONENTS = {
 # --- 3. 數據抓取函數 ---
 @st.cache_data(ttl=60)
 def get_all_data(tickers):
-    # 下載成份股 (取 5 天確保跨週末也有數據)
     df_stocks = yf.download(tickers, period='5d', interval='1d', progress=False)
-    # 下載匯率
     df_fx = yf.download('TWD=X', period='5d', interval='1d', progress=False)
     
-    # 處理成份股價格提取
     if isinstance(df_stocks.columns, pd.MultiIndex):
         prices = df_stocks['Close']
     else:
         prices = df_stocks
         
-    # 處理匯率提取
     if isinstance(df_fx.columns, pd.MultiIndex):
         fx_prices = df_fx['Close']['TWD=X']
     else:
-        # 處理單一下載情況
-        if 'Close' in df_fx.columns:
-            fx_prices = df_fx['Close']
-        else:
-            fx_prices = df_fx
+        fx_prices = df_fx['Close'] if 'Close' in df_fx.columns else df_fx
             
     return prices, fx_prices
 
@@ -61,7 +53,6 @@ st.title("⚡ 009805 新光美國電力基建 - 實時監控儀表板")
 try:
     prices, fx_prices = get_all_data(list(COMPONENTS.keys()))
     
-    # 確保匯率取值正確
     fx_clean = fx_prices.dropna()
     current_fx = float(fx_clean.iloc[-1])
     prev_fx = float(fx_clean.iloc[-2])
@@ -77,10 +68,8 @@ try:
                 curr_p = ticker_series.iloc[-1]
                 prev_p = ticker_series.iloc[-2]
                 change = (curr_p - prev_p) / prev_p
-                
                 contribution = change * weight
                 total_weighted_change += contribution
-                
                 stock_results.append({
                     "代號": ticker,
                     "漲跌幅%": round(change * 100, 2),
@@ -88,15 +77,33 @@ try:
                     "貢獻度%": round(contribution * 100, 4)
                 })
 
-    # --- 6. 淨值計算 ---
     estimated_nav = last_nav * (1 + total_weighted_change) * fx_change_ratio
     nav_diff = estimated_nav - last_nav
     nav_pct = (nav_diff / last_nav) * 100
 
-    # --- 7. 顯示儀表板 ---
     c1, c2, c3 = st.columns(3)
     c1.metric("預估即時淨值", f"{estimated_nav:.4f}", f"{nav_diff:.4f} ({nav_pct:.2f}%)")
     c2.metric("即時美金匯率", f"{current_fx:.2f}", f"{current_fx - prev_fx:.2f}")
     c3.metric("美股成分股總變動", f"{total_weighted_change*100:.2f}%")
 
-    st.markdown
+    st.markdown("---")
+
+    df_viz = pd.DataFrame(stock_results)
+    if not df_viz.empty:
+        st.subheader("📊 成分股表現熱力圖")
+        fig = px.treemap(
+            df_viz, path=["代號"], values="權重%",
+            color="漲跌幅%", color_continuous_scale='RdYlGn',
+            color_continuous_midpoint=0
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("📝 成分股詳細數據")
+        st.dataframe(df_viz.sort_values("貢獻度%", ascending=False), use_container_width=True)
+    else:
+        st.warning("暫無成分股數據。")
+
+except Exception as e:
+    st.error(f"數據解析失敗。錯誤訊息: {e}")
+
+st.caption(f"最後更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
