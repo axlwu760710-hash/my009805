@@ -72,3 +72,21 @@ if st.button("🚀 執行精確權重刷新"):
             st.success(f"同步完成！台灣時間：{datetime.now().strftime('%H:%M:%S')}")
 else:
     st.info("請點擊按鈕刷新。現在美股剛開盤，波動正精彩！")
+import streamlit as st
+import streamlit.components.v1 as components
+
+# 1. 設定網頁為寬螢幕模式，這樣你的看板才不會縮在一起
+st.set_page_config(page_title="009805 監控終端", layout="wide")
+
+# 2. 這是你的 GitHub 網址
+GITHUB_URL = "https://axlwu760710-hash.github.io/009805viewer/"
+
+# 3. 顯示標題
+st.title("⚡ 009805 美國電力基建 - 核心監測終端")
+
+# 4. 關鍵步驟：使用 iframe 嵌入網頁
+# height=1200 代表視窗高度，你可以根據喜好調整數字
+components.iframe(GITHUB_URL, height=1200, scrolling=True)
+
+# 5. 頁尾補充（可有可無）
+st.caption("數據來源：NYSE FactSet & GitHub 即時更新")
