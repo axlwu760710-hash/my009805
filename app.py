@@ -1,8 +1,13 @@
 import yfinance as yf
 import pandas as pd
 import datetime
+import os
 
-# 核心權重數據 (對標您原本提供的 50 檔精確比例)
+# 1. 自動偵測 index.html 的位置
+current_dir = os.path.dirname(os.path.abspath(__file__))
+index_path = os.path.join(current_dir, "index.html")
+
+# 2. 50 檔精確權重
 COMPONENTS = {
     "GEV": 0.1265, "VRT": 0.0975, "ETN": 0.0912, "PWR": 0.0635, "HUBB": 0.0610,
     "NEE": 0.0418, "SO": 0.0355, "DUK": 0.0332, "NXT": 0.0275, "D": 0.0235,
@@ -21,6 +26,9 @@ def generate_dashboard():
     tickers = list(COMPONENTS.keys()) + ["TWD=X"]
     data = yf.download(tickers, period="2d", interval="1d", progress=False)['Close']
     
+    if data.empty or len(data) < 2:
+        return None, 0, 0, 0
+    
     latest = data.iloc[-1]
     prev = data.iloc[-2]
     
@@ -34,12 +42,13 @@ def generate_dashboard():
             impact = change * weight
             total_impact += impact
             
-            color = "#00ff87" if change >= 0 else "#ff4b4b"
+            # 使用適合你藍色 UI 的顏色
+            color = "#22c55e" if change >= 0 else "#ef4444"
             table_rows += f"""
             <tr>
-                <td><b style="color:white">{t}</b></td>
+                <td><b class="ticker">{t}</b></td>
                 <td style="color:{color}">{change:+.2%}</td>
-                <td>{weight:.2%}</td>
+                <td><span class="weight-tag">{weight:.2%}</span></td>
                 <td style="color:{color}; font-weight:bold;">{impact:+.4%}</td>
             </tr>
             """
@@ -50,18 +59,24 @@ def generate_dashboard():
     
     return table_rows, total_impact, usd_change, final_est
 
-# 執行計算並讀取網頁模板
+# 執行主程式
 rows, impact, fx, total = generate_dashboard()
 
-with open("index.html", "r", encoding="utf-8") as f:
-    html = f.read()
+if rows:
+    # 讀取模板
+    with open(index_path, "r", encoding="utf-8") as f:
+        html = f.read()
 
-# 替換 HTML 中的變數
-html = html.replace("", rows)
-html = html.replace("", f"{impact:+.2%}")
-html = html.replace("", f"{fx:+.2%}")
-html = html.replace("", f"{total:+.2%}")
-html = html.replace("", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    # --- 關鍵修正：將數據填入對應標籤 ---
+    html = html.replace("", rows)
+    html = html.replace("", f"{impact:+.2%}")
+    html = html.replace("", f"{fx:+.2%}")
+    html = html.replace("", f"{total:+.2%}")
+    html = html.replace("", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
-with open("index.html", "w", encoding="utf-8") as f:
-    f.write(html)
+    # 寫回檔案
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    print("數據同步成功！")
+else:
+    print("數據獲取失敗，請檢查網路或 API。")
