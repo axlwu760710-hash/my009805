@@ -3,7 +3,7 @@ import pandas as pd
 import datetime
 import os
 
-# 1. 自動偵測 index.html 的位置
+# 1. 確定檔案路徑
 current_dir = os.path.dirname(os.path.abspath(__file__))
 index_path = os.path.join(current_dir, "index.html")
 
@@ -21,99 +21,50 @@ COMPONENTS = {
     "AES": 0.0034, "ITRI": 0.0031, "AMSC": 0.0024, "MEI": 0.0007, "MVST": 0.0003
 }
 
-def generate_dashboard():
-    # 抓取 50 檔 + 匯率
+def run():
+    # 3. 抓取數據
     tickers = list(COMPONENTS.keys()) + ["TWD=X"]
     data = yf.download(tickers, period="2d", interval="1d", progress=False)['Close']
     
     if data.empty or len(data) < 2:
-        return None, 0, 0, 0
+        print("數據不足，跳過更新")
+        return
+
+    latest, prev = data.iloc[-1], data.iloc[-2]
     
-    latest = data.iloc[-1]
-    prev = data.iloc[-2]
-    
+    rows = ""
     total_impact = 0
-    table_rows = ""
     
-    # 計算美股貢獻
+    # 4. 產生表格與計算
     for t, weight in COMPONENTS.items():
         if t in latest and t in prev:
             change = (latest[t] - prev[t]) / prev[t]
             impact = change * weight
             total_impact += impact
-            
-            # 使用適合你藍色 UI 的顏色
             color = "#22c55e" if change >= 0 else "#ef4444"
-            table_rows += f"""
-            <tr>
-                <td><b class="ticker">{t}</b></td>
-                <td style="color:{color}">{change:+.2%}</td>
-                <td><span class="weight-tag">{weight:.2%}</span></td>
-                <td style="color:{color}; font-weight:bold;">{impact:+.4%}</td>
-            </tr>
-            """
-            
-    # 匯率計算
-    usd_change = (latest["TWD=X"] - prev["TWD=X"]) / prev["TWD=X"]
-    final_est = total_impact + usd_change
+            rows += f'<tr><td><span class="ticker">{t}</span></td><td style="color:{color}">{change:+.2%}</td><td><span class="weight-tag">{weight:.2%}</span></td><td style="color:{color}; font-weight:bold;">{impact:+.4%}</td></tr>'
     
-    return table_rows, total_impact, usd_change, final_est
+    usd_change = (latest["TWD=X"] - prev["TWD=X"]) / prev["TWD=X"]
+    final_total = total_impact + usd_change
+    
+    # 5. 更新 HTML
+    if not os.path.exists(index_path):
+        print(f"錯誤：找不到 {index_path}")
+        return
 
-# 執行主程式
-rows, impact, fx, total = generate_dashboard()
-
-if rows:
-    # 讀取模板
     with open(index_path, "r", encoding="utf-8") as f:
         html = f.read()
-
-    # --- 關鍵修正：將數據填入對應標籤 ---
+    
+    # --- 關鍵修正處：使用正確的 HTML 註解標籤進行替換 ---
+    html = html.replace("", f"{total_impact:+.2%}")
+    html = html.replace("", f"{usd_change:+.2%}")
+    html = html.replace("", f"{final_total:+.2%}")
     html = html.replace("", rows)
-    html = html.replace("", f"{impact:+.2%}")
-    html = html.replace("", f"{fx:+.2%}")
-    html = html.replace("", f"{total:+.2%}")
     html = html.replace("", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-
-    # 寫回檔案
+    
     with open(index_path, "w", encoding="utf-8") as f:
         f.write(html)
     print("數據同步成功！")
-else:
-    print("數據獲取失敗，請檢查網路或 API。")
-import streamlit as st
-import streamlit.components.v1 as components
-import os
 
-# 1. 基礎設定
-st.set_page_config(page_title="009805 監控終端", layout="wide")
-
-# 2. 定位 index.html 的絕對路徑
-current_dir = os.path.dirname(os.path.abspath(__file__))
-index_path = os.path.join(current_dir, "index.html")
-
-# 3. 標題
-st.title("⚡ 009805 美國電力基建 - 核心監測終端")
-
-# 4. 讀取並顯示邏輯
-if os.path.exists(index_path):
-    try:
-        with open(index_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        
-        # 顯示網頁內容
-        components.html(html_content, height=1200, scrolling=True)
-    except Exception as e:
-        st.error(f"讀取網頁時發生錯誤：{e}")
-else:
-    # 如果檔案不存在，顯示提示並引導
-    st.warning("⚠️ 尚未偵測到動態數據檔 (index.html)")
-    st.info("請確保您已執行 GitHub Actions 中的 'Daily 009805 Update'，它會自動產生這個檔案。")
-    
-    # 備援：直接嵌入 GitHub Pages 網址
-    GITHUB_URL = "https://axlwu760710-hash.github.io/009805viewer/"
-    st.write("---")
-    st.write("正在從備援網址載入...")
-    components.iframe(GITHUB_URL, height=800, scrolling=True)
-
-# 5. 頁尾說明
-st.caption("數據同步由 GitHub Actions 驅動 | 若數據未更新請檢查 Action 執行狀態")
+if __name__ == "__main__":
+    run()
