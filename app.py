@@ -1,14 +1,8 @@
-import streamlit as st
 import yfinance as yf
 import pandas as pd
-from datetime import datetime
+import datetime
 
-# 1. 頁面基礎設定
-st.set_page_config(page_title="009805 專業版監控", page_icon="📈", layout="wide")
-st.title("⚡ 009805 新光美國電力基建 (50檔精確權重)")
-
-# 2. 核心權重數據 (對標最新指數權重)
-# 如果你發現哪一檔權重變了，直接改後面的數字即可
+# 核心權重數據 (對標您原本提供的 50 檔精確比例)
 COMPONENTS = {
     "GEV": 0.1265, "VRT": 0.0975, "ETN": 0.0912, "PWR": 0.0635, "HUBB": 0.0610,
     "NEE": 0.0418, "SO": 0.0355, "DUK": 0.0332, "NXT": 0.0275, "D": 0.0235,
@@ -22,71 +16,52 @@ COMPONENTS = {
     "AES": 0.0034, "ITRI": 0.0031, "AMSC": 0.0024, "MEI": 0.0007, "MVST": 0.0003
 }
 
-# 3. 數據計算邏輯
-if st.button("🚀 執行精確權重刷新"):
-    with st.spinner("正在同步 50 檔美股即時報價與匯率..."):
-        # 加入 USD/TWD 匯率抓取，讓計算更接近真實淨值
-        tickers = list(COMPONENTS.keys()) + ["009805.TW", "TWD=X"]
-        data = yf.download(tickers, period="2d", interval="1d", progress=False)['Close']
-        
-        if not data.empty:
-            latest = data.iloc[-1]
-            prev = data.iloc[-2]
+def generate_dashboard():
+    # 抓取 50 檔 + 匯率
+    tickers = list(COMPONENTS.keys()) + ["TWD=X"]
+    data = yf.download(tickers, period="2d", interval="1d", progress=False)['Close']
+    
+    latest = data.iloc[-1]
+    prev = data.iloc[-2]
+    
+    total_impact = 0
+    table_rows = ""
+    
+    # 計算美股貢獻
+    for t, weight in COMPONENTS.items():
+        if t in latest and t in prev:
+            change = (latest[t] - prev[t]) / prev[t]
+            impact = change * weight
+            total_impact += impact
             
-            results = []
-            total_impact = 0
+            color = "#00ff87" if change >= 0 else "#ff4b4b"
+            table_rows += f"""
+            <tr>
+                <td><b style="color:white">{t}</b></td>
+                <td style="color:{color}">{change:+.2%}</td>
+                <td>{weight:.2%}</td>
+                <td style="color:{color}; font-weight:bold;">{impact:+.4%}</td>
+            </tr>
+            """
             
-            # 計算美股漲跌對 ETF 的貢獻
-            for t, weight in COMPONENTS.items():
-                if t in latest and t in prev:
-                    change = (latest[t] - prev[t]) / prev[t]
-                    impact = change * weight
-                    total_impact += impact
-                    results.append({
-                        "代號": t,
-                        "當前價": f"${latest[t]:.2f}",
-                        "今日漲跌": f"{change:+.2%}",
-                        "權重": f"{weight:.2%}",
-                        "貢獻度": impact
-                    })
-            
-            # 考慮匯率波動 (美金漲 = 009805 受益)
-            usd_change = (latest["TWD=X"] - prev["TWD=X"]) / prev["TWD=X"]
-            final_est = total_impact + usd_change
-            
-            # 顯示大字報
-            st.divider()
-            c1, c2, c3 = st.columns(3)
-            c1.metric("美股加權預估", f"{total_impact:+.2%}")
-            c2.metric("匯率變動 (USD/TWD)", f"{usd_change:+.2%}")
-            c3.metric("總計預估漲跌", f"{final_est:+.2%}", help="這是美股漲跌+匯率變動的綜合預估")
-            
-            # 顯示表格
-            df = pd.DataFrame(results).sort_values("貢獻度", ascending=False)
-            st.write("### 📊 成分股即時貢獻明細")
-            st.dataframe(
-                df.style.format({"貢獻度": "{:+.4%}"}),
-                use_container_width=True,
-                height=600
-            )
-            st.success(f"同步完成！台灣時間：{datetime.now().strftime('%H:%M:%S')}")
-else:
-    st.info("請點擊按鈕刷新。現在美股剛開盤，波動正精彩！")
-import streamlit as st
-import streamlit.components.v1 as components
+    # 匯率計算
+    usd_change = (latest["TWD=X"] - prev["TWD=X"]) / prev["TWD=X"]
+    final_est = total_impact + usd_change
+    
+    return table_rows, total_impact, usd_change, final_est
 
-# 1. 設定網頁為寬螢幕模式，這樣你的看板才不會縮在一起
-st.set_page_config(page_title="009805 監控終端", layout="wide")
+# 執行計算並讀取網頁模板
+rows, impact, fx, total = generate_dashboard()
 
-# 2. 這是你的 GitHub 網址
-GITHUB_URL = "https://axlwu760710-hash.github.io/009805viewer/"
+with open("index.html", "r", encoding="utf-8") as f:
+    html = f.read()
 
-# 3. 顯示標題
-st.title("⚡ 009805 美國電力基建 - 核心監測終端")
+# 替換 HTML 中的變數
+html = html.replace("", rows)
+html = html.replace("", f"{impact:+.2%}")
+html = html.replace("", f"{fx:+.2%}")
+html = html.replace("", f"{total:+.2%}")
+html = html.replace("", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
-# 4. 關鍵步驟：使用 iframe 嵌入網頁
-# height=1200 代表視窗高度，你可以根據喜好調整數字
-components.iframe(GITHUB_URL, height=1200, scrolling=True)
-
-# 5. 頁尾補充（可有可無）
-st.caption("數據來源：NYSE FactSet & GitHub 即時更新")
+with open("index.html", "w", encoding="utf-8") as f:
+    f.write(html)
