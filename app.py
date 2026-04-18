@@ -80,3 +80,40 @@ if rows:
     print("數據同步成功！")
 else:
     print("數據獲取失敗，請檢查網路或 API。")
+import streamlit as st
+import streamlit.components.v1 as components
+import os
+
+# 1. 基礎設定
+st.set_page_config(page_title="009805 監控終端", layout="wide")
+
+# 2. 定位 index.html 的絕對路徑
+current_dir = os.path.dirname(os.path.abspath(__file__))
+index_path = os.path.join(current_dir, "index.html")
+
+# 3. 標題
+st.title("⚡ 009805 美國電力基建 - 核心監測終端")
+
+# 4. 讀取並顯示邏輯
+if os.path.exists(index_path):
+    try:
+        with open(index_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        
+        # 顯示網頁內容
+        components.html(html_content, height=1200, scrolling=True)
+    except Exception as e:
+        st.error(f"讀取網頁時發生錯誤：{e}")
+else:
+    # 如果檔案不存在，顯示提示並引導
+    st.warning("⚠️ 尚未偵測到動態數據檔 (index.html)")
+    st.info("請確保您已執行 GitHub Actions 中的 'Daily 009805 Update'，它會自動產生這個檔案。")
+    
+    # 備援：直接嵌入 GitHub Pages 網址
+    GITHUB_URL = "https://axlwu760710-hash.github.io/009805viewer/"
+    st.write("---")
+    st.write("正在從備援網址載入...")
+    components.iframe(GITHUB_URL, height=800, scrolling=True)
+
+# 5. 頁尾說明
+st.caption("數據同步由 GitHub Actions 驅動 | 若數據未更新請檢查 Action 執行狀態")
